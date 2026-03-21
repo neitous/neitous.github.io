@@ -65,6 +65,20 @@ body {
   backdrop-filter: blur(12px);
 }
 
+.audio-widget button {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
 .audio-widget label {
   font-size: 12px;
   color: #c8d9ff;
@@ -76,6 +90,66 @@ body {
 .audio-widget input[type="range"] {
   width: 140px;
   accent-color: #56f2d1;
+}
+
+.preloader-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  z-index: 1500;
+  cursor: pointer;
+  transition: opacity 0.6s ease, visibility 0.6s ease;
+}
+
+body.preloader-active {
+  overflow: hidden;
+}
+
+.preloader-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.preloader-message {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(20px, 4vw, 34px);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  margin-bottom: 20px;
+}
+
+.rain-container {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rain-drop {
+  position: absolute;
+  top: -20px;
+  width: 2px;
+  height: 14px;
+  background: rgba(255,255,255,0.7);
+  border-radius: 50%;
+  filter: blur(0.2px);
+  animation: fall linear;
+}
+
+@keyframes fall {
+  to { transform: translateY(110vh); opacity: 0.1; }
 }
 
 body::before,
@@ -559,10 +633,15 @@ h1 {
 
     </style>
   </head>
-  <body>
-    <audio id="bg-audio" src="music.mp3" autoplay loop></audio>
+  <body class="preloader-active">
+    <div class="preloader-overlay" id="preloaderOverlay" aria-label="Click to enter">
+      <div class="preloader-message">click to enter...</div>
+      <div class="rain-container" id="rainContainer"></div>
+    </div>
+
+    <audio id="bg-audio" src="music.mp3" autoplay loop muted playsinline></audio>
     <div class="audio-widget" role="region" aria-label="Background music control">
-      <label for="volume" aria-label="Volume control">🔊</label>
+      <button id="play-btn" type="button" aria-label="Play or pause audio"><img src="sound.svg" alt="Sound icon" width="18" height="18" /></button>
       <input id="volume" type="range" min="0" max="1" step="0.01" value="0.4" aria-label="Volume slider" />
     </div>
     <div class="shell">
@@ -691,10 +770,15 @@ h1 {
       const tryPlay = async () => {
         try {
           await audio.play();
+          if (!audio.paused) {
+            audio.muted = false;
+          }
         } catch (e) {
           // Autoplay blocked: wait for user interaction
         }
       };
+
+      window.addEventListener("load", tryPlay);
 
       volume.addEventListener("input", async (event) => {
         const value = Number(event.target.value);
@@ -715,7 +799,71 @@ h1 {
 
       audio.addEventListener("ended", () => audio.play());
 
-      updateVolumeDisplay(audio.volume);
+      const playBtn = document.getElementById("play-btn");
+      const setButton = () => {
+        playBtn.innerHTML = `<img src="sound.svg" alt="Sound icon" width="18" height="18" style="opacity: ${audio.paused ? 0.5 : 1};" />`;
+      };
+
+      playBtn.addEventListener("click", async () => {
+        if (audio.paused) {
+          await tryPlay();
+        } else {
+          audio.pause();
+        }
+        setButton();
+      });
+
+      audio.addEventListener("play", setButton);
+      audio.addEventListener("pause", setButton);
+
+      setButton();
+
+      // rain particle generator for preloader (starts slow, ramps in speed)
+      const rainContainer = document.getElementById("rainContainer");
+      let rainInterval;
+      let rainStart = Date.now();
+
+      const spawnRainDrop = () => {
+        const elapsedSec = (Date.now() - rainStart) / 1000;
+        const intensity = Math.min(1.5, 0.08 + elapsedSec * 0.22);
+
+        if (Math.random() > intensity) return;
+
+        const drop = document.createElement("div");
+        drop.className = "rain-drop";
+        const x = Math.random() * window.innerWidth;
+        const size = 1 + Math.random() * 1.5;
+        const duration = 600 + Math.random() * 700;
+
+        drop.style.left = `${x}px`;
+        drop.style.width = `${size}px`;
+        drop.style.height = `${10 + size * 4}px`;
+        drop.style.opacity = `${0.35 + Math.random() * 0.65}`;
+        drop.style.animationDuration = `${duration}ms`;
+
+        rainContainer.appendChild(drop);
+        setTimeout(() => drop.remove(), duration);
+      };
+
+      const startRain = () => {
+        rainStart = Date.now();
+        rainInterval = setInterval(spawnRainDrop, 70);
+      };
+
+      const stopRain = () => {
+        clearInterval(rainInterval);
+      };
+
+      startRain();
+
+      const preloader = document.getElementById("preloaderOverlay");
+      preloader.addEventListener("click", async () => {
+        preloader.classList.add("hidden");
+        document.body.classList.remove("preloader-active");
+        stopRain();
+        audio.muted = false;
+        await tryPlay();
+      });
     </script>
   </body>
 </html>
